@@ -162,7 +162,26 @@ if(ANTIVIRUS_BUILD_GUI)
         target_compile_options(AntivirusGui PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
+    get_target_property(ANTIVIRUS_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(ANTIVIRUS_QT_BIN_DIR "${ANTIVIRUS_QMAKE_EXECUTABLE}" DIRECTORY)
+    find_program(ANTIVIRUS_WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${ANTIVIRUS_QT_BIN_DIR}" REQUIRED)
+
     install(TARGETS AntivirusGui RUNTIME DESTINATION bin)
+
+    install(CODE "
+        message(STATUS \"Deploying Qt runtime with windeployqt\")
+        execute_process(
+            COMMAND \"${ANTIVIRUS_WINDEPLOYQT_EXECUTABLE}\"
+                --release
+                --no-translations
+                --dir \"\${CMAKE_INSTALL_PREFIX}/bin\"
+                \"\${CMAKE_INSTALL_PREFIX}/bin/AntivirusGui.exe\"
+            RESULT_VARIABLE ANTIVIRUS_WINDEPLOYQT_RESULT
+        )
+        if(NOT ANTIVIRUS_WINDEPLOYQT_RESULT EQUAL 0)
+            message(FATAL_ERROR \"windeployqt failed with code \${ANTIVIRUS_WINDEPLOYQT_RESULT}\")
+        endif()
+    ")
 endif()
 
 if(ANTIVIRUS_BUILD_SERVICE)
@@ -220,3 +239,54 @@ endif()
 
 install(FILES README.md DESTINATION .)
 install(DIRECTORY docs/ DESTINATION docs)
+install(DIRECTORY installer/ DESTINATION installer)
+
+if(WIN32)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION bin)
+    include(InstallRequiredSystemLibraries)
+
+    set(CPACK_VERBATIM_VARIABLES TRUE)
+    set(CPACK_GENERATOR "NSIS")
+    set(CPACK_PACKAGE_NAME "AntivirusGui")
+    set(CPACK_PACKAGE_VENDOR "Antivirus Coursework")
+    set(CPACK_PACKAGE_CONTACT "student@example.local")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Educational Windows antivirus GUI with service")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_FILE_NAME "AntivirusGuiInstaller-${PROJECT_VERSION}-win64")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "Antivirus GUI")
+
+    set(CPACK_NSIS_DISPLAY_NAME "Antivirus GUI")
+    set(CPACK_NSIS_PACKAGE_NAME "Antivirus GUI")
+    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+    set(CPACK_NSIS_EXECUTABLES_DIRECTORY "bin")
+    set(CPACK_NSIS_MUI_FINISHPAGE_RUN "AntivirusGui.exe")
+    set(CPACK_NSIS_MODIFY_PATH OFF)
+
+    set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS [=[
+        DetailPrint "Removing old AntivirusGuiService if it exists"
+        ExecWait 'taskkill.exe /im AntivirusGui.exe /f'
+        ExecWait 'taskkill.exe /im AntivirusService.exe /f'
+        ExecWait 'sc.exe delete antivirusguiservice'
+
+        DetailPrint "Installing AntivirusGuiService"
+        ExecWait '"$INSTDIR\bin\AntivirusService.exe" --install'
+        ExecWait 'sc.exe failure antivirusguiservice reset= 60 actions= restart/1000/restart/1000/restart/1000'
+        ExecWait 'sc.exe failureflag antivirusguiservice 1'
+        ExecWait 'sc.exe start antivirusguiservice'
+    ]=])
+
+    set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS [=[
+        DetailPrint "Stopping Antivirus GUI"
+        ExecWait 'taskkill.exe /im AntivirusGui.exe /f'
+
+        DetailPrint "Stopping AntivirusGuiService"
+        ExecWait 'taskkill.exe /im AntivirusService.exe /f'
+
+        DetailPrint "Removing AntivirusGuiService"
+        ExecWait '"$INSTDIR\bin\AntivirusService.exe" --uninstall'
+        ExecWait 'sc.exe delete antivirusguiservice'
+    ]=])
+
+    include(CPack)
+endif()

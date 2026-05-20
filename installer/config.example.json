@@ -1,0 +1,4 @@
+{
+  "backendUrl": "https://auth.example.invalid",
+  "mockAuth": true
+}

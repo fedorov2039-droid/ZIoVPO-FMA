@@ -8,9 +8,12 @@ on:
       - "task-**"
       - "feat/**"
       - "bugfix/**"
+      - "extra-**"
   pull_request:
     branches:
       - main
+      - "task-**"
+      - "extra-**"
 
 jobs:
   build:
@@ -33,16 +36,29 @@ jobs:
           arch: win64_msvc2019_64
           cache: true
 
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Upload artifacts
+      - name: Package installer
+        run: cmake --build build --config Release --target package
+
+      - name: Upload executables
         uses: actions/upload-artifact@v4
         with:
           name: antivirus-gui-windows-release
           path: |
             build/Release/AntivirusGui.exe
             build/Release/AntivirusService.exe
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: antivirus-gui-windows-installer
+          path: |
+            build/AntivirusGuiInstaller-*-win64.exe

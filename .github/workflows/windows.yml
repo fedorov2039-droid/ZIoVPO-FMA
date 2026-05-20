@@ -1,0 +1,48 @@
+name: Windows
+
+on:
+  push:
+    branches:
+      - main
+      - "chore/**"
+      - "task-**"
+      - "feat/**"
+      - "bugfix/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: antivirus-gui-windows-release
+          path: |
+            build/Release/AntivirusGui.exe
+            build/Release/AntivirusService.exe

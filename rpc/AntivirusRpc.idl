@@ -1,0 +1,13 @@
+import "oaidl.idl";
+
+[
+    uuid(8F8309E0-6A18-4A57-A569-560457A7B7A1),
+    version(1.0),
+    pointer_default(unique)
+]
+interface AntivirusRpc
+{
+    void AvPing([in] handle_t binding, [out] long* result);
+    void AvRequestServiceStop([in] handle_t binding, [out] long* result);
+    void AvGetServiceStatus([in] handle_t binding, [out] long* status);
+}

@@ -2,6 +2,7 @@
 
 #include "AntivirusRpc.h"
 #include "common/logging.h"
+#include "service/AuthState.h"
 
 #include <rpc.h>
 #include <windows.h>
@@ -11,6 +12,47 @@ namespace {
 
 constexpr wchar_t kRpcProtocol[] = L"ncalrpc";
 constexpr wchar_t kRpcEndpoint[] = L"AntivirusGuiRpc";
+
+template <std::size_t Size>
+void copyString(wchar_t (&destination)[Size], const std::wstring& source)
+{
+    wcsncpy_s(destination, source.c_str(), _TRUNCATE);
+}
+
+void copyAuthState(const AuthState& source, AvAuthState* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->authenticated = source.authenticated ? 1 : 0;
+    copyString(destination->displayName, source.displayName);
+    copyString(destination->login, source.login);
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyLicenseState(const LicenseState& source, AvLicenseState* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->licenseActive = source.active ? 1 : 0;
+    copyString(destination->licenseExpiresAt, source.expiresAt);
+    destination->activationRequired = source.activationRequired ? 1 : 0;
+    copyString(destination->featureBlockedReason, source.blockedReason);
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyFeatureState(const FeatureState& source, AvFeatureState* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->functionalityEnabled = source.enabled ? 1 : 0;
+    copyString(destination->blockedReason, source.blockedReason);
+}
 
 } // namespace
 
@@ -81,4 +123,34 @@ void AvGetServiceStatus(handle_t, long* status)
     if (status != nullptr) {
         *status = antivirus::service::queryServiceStateFromRpc();
     }
+}
+
+void AvGetAuthState(handle_t, AvAuthState* state)
+{
+    antivirus::service::copyAuthState(antivirus::service::queryAuthStateFromRpc(), state);
+}
+
+void AvLogin(handle_t, const wchar_t* login, const wchar_t* password, AvAuthState* state)
+{
+    antivirus::service::copyAuthState(antivirus::service::loginFromRpc(login, password), state);
+}
+
+void AvLogout(handle_t, AvAuthState* state)
+{
+    antivirus::service::copyAuthState(antivirus::service::logoutFromRpc(), state);
+}
+
+void AvGetLicenseState(handle_t, AvLicenseState* state)
+{
+    antivirus::service::copyLicenseState(antivirus::service::queryLicenseStateFromRpc(), state);
+}
+
+void AvActivateProduct(handle_t, const wchar_t* activationCode, AvLicenseState* state)
+{
+    antivirus::service::copyLicenseState(antivirus::service::activateFromRpc(activationCode), state);
+}
+
+void AvGetFeatureState(handle_t, AvFeatureState* state)
+{
+    antivirus::service::copyFeatureState(antivirus::service::queryFeatureStateFromRpc(), state);
 }

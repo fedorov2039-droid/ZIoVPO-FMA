@@ -2,6 +2,9 @@
 
 #include "common/app_paths.h"
 #include "common/logging.h"
+#include "service/AuthManager.h"
+#include "service/FeatureGate.h"
+#include "service/LicenseManager.h"
 #include "service/RpcServer.h"
 #include "service/SessionManager.h"
 
@@ -114,6 +117,39 @@ public:
         return NO_ERROR;
     }
 
+    AuthState authState() const
+    {
+        return authManager_.state();
+    }
+
+    AuthState login(const wchar_t* login, const wchar_t* password)
+    {
+        return authManager_.login(login != nullptr ? login : L"", password != nullptr ? password : L"");
+    }
+
+    AuthState logout()
+    {
+        const AuthState state = authManager_.logout();
+        licenseManager_.clear();
+        return state;
+    }
+
+    LicenseState licenseState() const
+    {
+        return licenseManager_.state(authManager_.state().authenticated);
+    }
+
+    LicenseState activate(const wchar_t* activationCode)
+    {
+        return licenseManager_.activate(authManager_.state().authenticated, activationCode != nullptr ? activationCode : L"");
+    }
+
+    FeatureState featureState() const
+    {
+        const AuthState auth = authManager_.state();
+        return computeFeatureState(auth, licenseManager_.state(auth.authenticated));
+    }
+
 private:
     void setStatus(DWORD state)
     {
@@ -136,6 +172,8 @@ private:
     HANDLE stopEvent_ = nullptr;
     RpcServer rpcServer_;
     SessionManager sessionManager_;
+    AuthManager authManager_;
+    LicenseManager licenseManager_;
 };
 
 DWORD WINAPI serviceControlHandler(DWORD controlCode, DWORD eventType, void* eventData, void*)
@@ -175,6 +213,60 @@ long queryServiceStateFromRpc()
     }
 
     return g_runtime->currentState();
+}
+
+AuthState queryAuthStateFromRpc()
+{
+    if (g_runtime == nullptr) {
+        return AuthState{.lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->authState();
+}
+
+AuthState loginFromRpc(const wchar_t* login, const wchar_t* password)
+{
+    if (g_runtime == nullptr) {
+        return AuthState{.lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->login(login, password);
+}
+
+AuthState logoutFromRpc()
+{
+    if (g_runtime == nullptr) {
+        return AuthState{.lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->logout();
+}
+
+LicenseState queryLicenseStateFromRpc()
+{
+    if (g_runtime == nullptr) {
+        return LicenseState{.lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->licenseState();
+}
+
+LicenseState activateFromRpc(const wchar_t* activationCode)
+{
+    if (g_runtime == nullptr) {
+        return LicenseState{.lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->activate(activationCode);
+}
+
+FeatureState queryFeatureStateFromRpc()
+{
+    if (g_runtime == nullptr) {
+        return FeatureState{.enabled = false, .blockedReason = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->featureState();
 }
 
 int installService()

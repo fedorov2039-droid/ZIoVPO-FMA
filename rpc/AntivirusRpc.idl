@@ -7,7 +7,33 @@ import "oaidl.idl";
 ]
 interface AntivirusRpc
 {
+    typedef struct AvAuthState {
+        long authenticated;
+        wchar_t displayName[128];
+        wchar_t login[128];
+        wchar_t lastError[256];
+    } AvAuthState;
+
+    typedef struct AvLicenseState {
+        long licenseActive;
+        wchar_t licenseExpiresAt[64];
+        long activationRequired;
+        wchar_t featureBlockedReason[256];
+        wchar_t lastError[256];
+    } AvLicenseState;
+
+    typedef struct AvFeatureState {
+        long functionalityEnabled;
+        wchar_t blockedReason[256];
+    } AvFeatureState;
+
     void AvPing([in] handle_t binding, [out] long* result);
     void AvRequestServiceStop([in] handle_t binding, [out] long* result);
     void AvGetServiceStatus([in] handle_t binding, [out] long* status);
+    void AvGetAuthState([in] handle_t binding, [out] AvAuthState* state);
+    void AvLogin([in] handle_t binding, [in, string] const wchar_t* login, [in, string] const wchar_t* password, [out] AvAuthState* state);
+    void AvLogout([in] handle_t binding, [out] AvAuthState* state);
+    void AvGetLicenseState([in] handle_t binding, [out] AvLicenseState* state);
+    void AvActivateProduct([in] handle_t binding, [in, string] const wchar_t* activationCode, [out] AvLicenseState* state);
+    void AvGetFeatureState([in] handle_t binding, [out] AvFeatureState* state);
 }

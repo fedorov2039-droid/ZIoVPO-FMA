@@ -52,6 +52,35 @@ private:
     handle_t binding_ = nullptr;
 };
 
+AuthState convertAuthState(const AvAuthState& state)
+{
+    return AuthState{
+        .authenticated = state.authenticated != 0,
+        .displayName = QString::fromWCharArray(state.displayName),
+        .login = QString::fromWCharArray(state.login),
+        .lastError = QString::fromWCharArray(state.lastError),
+    };
+}
+
+LicenseState convertLicenseState(const AvLicenseState& state)
+{
+    return LicenseState{
+        .licenseActive = state.licenseActive != 0,
+        .licenseExpiresAt = QString::fromWCharArray(state.licenseExpiresAt),
+        .activationRequired = state.activationRequired != 0,
+        .featureBlockedReason = QString::fromWCharArray(state.featureBlockedReason),
+        .lastError = QString::fromWCharArray(state.lastError),
+    };
+}
+
+FeatureState convertFeatureState(const AvFeatureState& state)
+{
+    return FeatureState{
+        .functionalityEnabled = state.functionalityEnabled != 0,
+        .blockedReason = QString::fromWCharArray(state.blockedReason),
+    };
+}
+
 } // namespace
 
 bool RpcClient::ping() const
@@ -92,6 +121,82 @@ long RpcClient::serviceStatus() const
     AvGetServiceStatus(binding.get(), &status);
 
     return status;
+}
+
+AuthState RpcClient::authState() const
+{
+    RpcBinding binding;
+    AvAuthState state{};
+    if (binding.get() == nullptr) {
+        state.lastError[0] = L'\0';
+        return convertAuthState(state);
+    }
+
+    AvGetAuthState(binding.get(), &state);
+    return convertAuthState(state);
+}
+
+AuthState RpcClient::login(const QString& login, const QString& password) const
+{
+    RpcBinding binding;
+    AvAuthState state{};
+    if (binding.get() == nullptr) {
+        return convertAuthState(state);
+    }
+
+    AvLogin(binding.get(),
+            reinterpret_cast<const wchar_t*>(login.utf16()),
+            reinterpret_cast<const wchar_t*>(password.utf16()),
+            &state);
+    return convertAuthState(state);
+}
+
+AuthState RpcClient::logout() const
+{
+    RpcBinding binding;
+    AvAuthState state{};
+    if (binding.get() == nullptr) {
+        return convertAuthState(state);
+    }
+
+    AvLogout(binding.get(), &state);
+    return convertAuthState(state);
+}
+
+LicenseState RpcClient::licenseState() const
+{
+    RpcBinding binding;
+    AvLicenseState state{};
+    if (binding.get() == nullptr) {
+        return convertLicenseState(state);
+    }
+
+    AvGetLicenseState(binding.get(), &state);
+    return convertLicenseState(state);
+}
+
+LicenseState RpcClient::activateProduct(const QString& activationCode) const
+{
+    RpcBinding binding;
+    AvLicenseState state{};
+    if (binding.get() == nullptr) {
+        return convertLicenseState(state);
+    }
+
+    AvActivateProduct(binding.get(), reinterpret_cast<const wchar_t*>(activationCode.utf16()), &state);
+    return convertLicenseState(state);
+}
+
+FeatureState RpcClient::featureState() const
+{
+    RpcBinding binding;
+    AvFeatureState state{};
+    if (binding.get() == nullptr) {
+        return convertFeatureState(state);
+    }
+
+    AvGetFeatureState(binding.get(), &state);
+    return convertFeatureState(state);
 }
 
 } // namespace antivirus::gui

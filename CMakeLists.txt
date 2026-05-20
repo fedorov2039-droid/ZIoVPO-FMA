@@ -194,7 +194,7 @@ if(ANTIVIRUS_BUILD_SERVICE)
     target_compile_definitions(AntivirusService PRIVATE ANTIVIRUS_APP_VERSION="${PROJECT_VERSION}")
 
     if(MSVC)
-        target_compile_options(AntivirusService PRIVATE /W4 /permissive-)
+        target_compile_options(AntivirusService PRIVATE /W4 /permissive- /utf-8)
     else()
         target_compile_options(AntivirusService PRIVATE -Wall -Wextra -Wpedantic)
     endif()

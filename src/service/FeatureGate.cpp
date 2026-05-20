@@ -9,7 +9,11 @@ FeatureState computeFeatureState(const AuthState& authState, const LicenseState&
     }
 
     if (!licenseState.active) {
-        return FeatureState{.enabled = false, .blockedReason = L"Требуется активная лицензия"};
+        const std::wstring reason = licenseState.blockedReason.empty()
+                                        ? L"Требуется активная лицензия"
+                                        : licenseState.blockedReason;
+
+        return FeatureState{.enabled = false, .blockedReason = reason};
     }
 
     return FeatureState{.enabled = true, .blockedReason = L""};

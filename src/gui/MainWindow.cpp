@@ -83,6 +83,7 @@ MainWindow::MainWindow(AppLifecycle& lifecycle, RpcClient& rpcClient, QWidget* p
     QTimer::singleShot(0, this, [this]() {
         updateAccountState();
     });
+
     auto* pollingTimer = new QTimer(this);
     pollingTimer->setInterval(7000);
     connect(pollingTimer, &QTimer::timeout, this, [this]() {
@@ -111,6 +112,10 @@ void MainWindow::updateAccountState()
 
     if (license.licenseActive) {
         licenseLabel_->setText(QStringLiteral("Лицензия: активна до %1").arg(license.licenseExpiresAt));
+    } else if (license.featureBlockedReason.contains(QStringLiteral("истек"), Qt::CaseInsensitive)) {
+        licenseLabel_->setText(QStringLiteral("Лицензия: истекла %1").arg(license.licenseExpiresAt));
+    } else if (!license.featureBlockedReason.isEmpty()) {
+        licenseLabel_->setText(QStringLiteral("Лицензия: %1").arg(license.featureBlockedReason));
     } else {
         licenseLabel_->setText(QStringLiteral("Лицензия: требуется активация"));
     }

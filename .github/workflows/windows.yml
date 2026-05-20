@@ -1,0 +1,64 @@
+name: Windows
+
+on:
+  push:
+    branches:
+      - main
+      - "chore/**"
+      - "task-**"
+      - "feature/**"
+      - "feat/**"
+      - "bugfix/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Restore Windows App SDK
+        run: npx --yes @microsoft/winappcli restore
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: .\installer\build-installer.ps1 -BuildDir build -OutputDir out\installer
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: antivirus-gui-windows-release
+          path: |
+            build/Release/AntivirusWinUi.exe
+            build/Release/Microsoft.WindowsAppRuntime.Bootstrap.dll
+            build/Release/AntivirusService.exe
+            build/Release/AntivirusCtl.exe
+            build/Release/AntivirusScanTests.exe
+
+      - name: Upload EXE installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: antivirus-gui-installer
+          path: |
+            out/installer/AntivirusGuiSetup.exe
+            out/installer/README-INSTALLER.md

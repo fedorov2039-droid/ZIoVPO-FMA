@@ -1,0 +1,85 @@
+import "oaidl.idl";
+
+[
+    uuid(8F8309E0-6A18-4A57-A569-560457A7B7A1),
+    version(1.0),
+    pointer_default(unique)
+]
+interface AntivirusRpc
+{
+    typedef struct AvAuthState {
+        long authenticated;
+        wchar_t displayName[128];
+        wchar_t login[128];
+        wchar_t lastError[256];
+    } AvAuthState;
+
+    typedef struct AvLicenseState {
+        long licenseActive;
+        wchar_t licenseExpiresAt[64];
+        long activationRequired;
+        wchar_t featureBlockedReason[256];
+        wchar_t lastError[256];
+    } AvLicenseState;
+
+    typedef struct AvFeatureState {
+        long functionalityEnabled;
+        wchar_t blockedReason[256];
+    } AvFeatureState;
+
+    typedef struct AvDatabaseInfo {
+        long databaseLoaded;
+        wchar_t releaseDate[64];
+        unsigned long recordCount;
+        wchar_t lastError[256];
+    } AvDatabaseInfo;
+
+    typedef struct AvScanResult {
+        long scanned;
+        long malicious;
+        wchar_t scannedPath[512];
+        wchar_t threatName[128];
+        wchar_t objectType[64];
+        unsigned long detectionOffset;
+        unsigned long scannedFiles;
+        unsigned long maliciousFiles;
+        wchar_t details[2048];
+        wchar_t lastError[512];
+    } AvScanResult;
+
+    typedef struct AvDirectoryMonitorStatus {
+        long running;
+        wchar_t path[512];
+        wchar_t lastError[512];
+    } AvDirectoryMonitorStatus;
+
+    typedef struct AvScanScheduleStatus {
+        long running;
+        long targetType;
+        wchar_t path[512];
+        unsigned long intervalSeconds;
+        wchar_t lastRunAt[64];
+        wchar_t lastDetails[2048];
+        wchar_t lastError[512];
+    } AvScanScheduleStatus;
+
+    void AvPing([in] handle_t binding, [out] long* result);
+    void AvRequestServiceStop([in] handle_t binding, [out] long* result);
+    void AvGetServiceStatus([in] handle_t binding, [out] long* status);
+    void AvGetAuthState([in] handle_t binding, [out] AvAuthState* state);
+    void AvLogin([in] handle_t binding, [in, string] const wchar_t* login, [in, string] const wchar_t* password, [out] AvAuthState* state);
+    void AvLogout([in] handle_t binding, [out] AvAuthState* state);
+    void AvGetLicenseState([in] handle_t binding, [out] AvLicenseState* state);
+    void AvActivateProduct([in] handle_t binding, [in, string] const wchar_t* activationCode, [out] AvLicenseState* state);
+    void AvGetFeatureState([in] handle_t binding, [out] AvFeatureState* state);
+    void AvGetDatabaseInfo([in] handle_t binding, [out] AvDatabaseInfo* info);
+    void AvScanFile([in] handle_t binding, [in, string] const wchar_t* path, [out] AvScanResult* result);
+    void AvScanDirectory([in] handle_t binding, [in, string] const wchar_t* path, [out] AvScanResult* result);
+    void AvScanFixedDrives([in] handle_t binding, [out] AvScanResult* result);
+    void AvStartDirectoryMonitor([in] handle_t binding, [in, string] const wchar_t* path, [out] AvDirectoryMonitorStatus* status);
+    void AvStopDirectoryMonitor([in] handle_t binding, [out] AvDirectoryMonitorStatus* status);
+    void AvGetDirectoryMonitorStatus([in] handle_t binding, [out] AvDirectoryMonitorStatus* status);
+    void AvStartScanSchedule([in] handle_t binding, [in] long targetType, [in, string] const wchar_t* path, [in] unsigned long intervalSeconds, [out] AvScanScheduleStatus* status);
+    void AvStopScanSchedule([in] handle_t binding, [out] AvScanScheduleStatus* status);
+    void AvGetScanScheduleStatus([in] handle_t binding, [out] AvScanScheduleStatus* status);
+}

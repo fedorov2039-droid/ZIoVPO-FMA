@@ -1,0 +1,273 @@
+#include "service/RpcServer.h"
+
+#include "AntivirusRpc.h"
+#include "common/logging.h"
+#include "service/AuthState.h"
+
+#include <cstdint>
+#include <limits>
+#include <rpc.h>
+#include <windows.h>
+
+namespace antivirus::service {
+namespace {
+
+constexpr wchar_t kRpcProtocol[] = L"ncalrpc";
+constexpr wchar_t kRpcEndpoint[] = L"AntivirusGuiRpc";
+
+template <std::size_t Size>
+void copyString(wchar_t (&destination)[Size], const std::wstring& source)
+{
+    wcsncpy_s(destination, source.c_str(), _TRUNCATE);
+}
+
+unsigned long clampToUnsignedLong(std::uint64_t value)
+{
+    return value > static_cast<std::uint64_t>(std::numeric_limits<unsigned long>::max())
+        ? std::numeric_limits<unsigned long>::max()
+        : static_cast<unsigned long>(value);
+}
+
+void copyAuthState(const AuthState& source, AvAuthState* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->authenticated = source.authenticated ? 1 : 0;
+    copyString(destination->displayName, source.displayName);
+    copyString(destination->login, source.login);
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyLicenseState(const LicenseState& source, AvLicenseState* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->licenseActive = source.active ? 1 : 0;
+    copyString(destination->licenseExpiresAt, source.expiresAt);
+    destination->activationRequired = source.activationRequired ? 1 : 0;
+    copyString(destination->featureBlockedReason, source.blockedReason);
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyFeatureState(const FeatureState& source, AvFeatureState* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->functionalityEnabled = source.enabled ? 1 : 0;
+    copyString(destination->blockedReason, source.blockedReason);
+}
+
+void copyDatabaseInfo(const DatabaseInfo& source, AvDatabaseInfo* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->databaseLoaded = source.loaded ? 1 : 0;
+    copyString(destination->releaseDate, source.releaseDate);
+    destination->recordCount = clampToUnsignedLong(static_cast<std::uint64_t>(source.recordCount));
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyScanResult(const RpcScanResult& source, AvScanResult* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->scanned = source.scanned ? 1 : 0;
+    destination->malicious = source.malicious ? 1 : 0;
+    copyString(destination->scannedPath, source.scannedPath);
+    copyString(destination->threatName, source.threatName);
+    copyString(destination->objectType, source.objectType);
+    destination->detectionOffset = clampToUnsignedLong(source.detectionOffset);
+    destination->scannedFiles = clampToUnsignedLong(static_cast<std::uint64_t>(source.scannedFiles));
+    destination->maliciousFiles = clampToUnsignedLong(static_cast<std::uint64_t>(source.maliciousFiles));
+    copyString(destination->details, source.details);
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyDirectoryMonitorInfo(const DirectoryMonitorInfo& source, AvDirectoryMonitorStatus* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->running = source.running ? 1 : 0;
+    copyString(destination->path, source.path);
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyScanScheduleInfo(const ScanScheduleInfo& source, AvScanScheduleStatus* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->running = source.running ? 1 : 0;
+    destination->targetType = source.targetType;
+    copyString(destination->path, source.path);
+    destination->intervalSeconds = source.intervalSeconds;
+    copyString(destination->lastRunAt, source.lastRunAt);
+    copyString(destination->lastDetails, source.lastDetails);
+    copyString(destination->lastError, source.lastError);
+}
+
+} // namespace
+
+bool RpcServer::start()
+{
+    RPC_STATUS status = RpcServerUseProtseqEpW(reinterpret_cast<RPC_WSTR>(const_cast<wchar_t*>(kRpcProtocol)),
+                                              RPC_C_PROTSEQ_MAX_REQS_DEFAULT,
+                                              reinterpret_cast<RPC_WSTR>(const_cast<wchar_t*>(kRpcEndpoint)),
+                                              nullptr);
+    if (status != RPC_S_OK && status != RPC_S_DUPLICATE_ENDPOINT) {
+        antivirus::common::log_error(L"RpcServerUseProtseqEpW завершился ошибкой");
+        return false;
+    }
+
+    status = RpcServerRegisterIf2(AntivirusRpc_v1_0_s_ifspec,
+                                  nullptr,
+                                  nullptr,
+                                  RPC_IF_ALLOW_LOCAL_ONLY,
+                                  RPC_C_LISTEN_MAX_CALLS_DEFAULT,
+                                  static_cast<unsigned>(-1),
+                                  nullptr);
+    if (status != RPC_S_OK) {
+        antivirus::common::log_error(L"RpcServerRegisterIf2 завершился ошибкой");
+        return false;
+    }
+
+    status = RpcServerListen(1, RPC_C_LISTEN_MAX_CALLS_DEFAULT, TRUE);
+    if (status != RPC_S_OK) {
+        antivirus::common::log_error(L"RpcServerListen завершился ошибкой");
+        RpcServerUnregisterIf(AntivirusRpc_v1_0_s_ifspec, nullptr, FALSE);
+        return false;
+    }
+
+    started_ = true;
+    return true;
+}
+
+void RpcServer::stop()
+{
+    if (!started_) {
+        return;
+    }
+
+    RpcMgmtStopServerListening(nullptr);
+    RpcServerUnregisterIf(AntivirusRpc_v1_0_s_ifspec, nullptr, FALSE);
+    started_ = false;
+}
+
+} // namespace antivirus::service
+
+void AvPing(handle_t, long* result)
+{
+    if (result != nullptr) {
+        *result = 1;
+    }
+}
+
+void AvRequestServiceStop(handle_t, long* result)
+{
+    antivirus::service::requestServiceStopFromRpc();
+    if (result != nullptr) {
+        *result = 1;
+    }
+}
+
+void AvGetServiceStatus(handle_t, long* status)
+{
+    if (status != nullptr) {
+        *status = antivirus::service::queryServiceStateFromRpc();
+    }
+}
+
+void AvGetAuthState(handle_t, AvAuthState* state)
+{
+    antivirus::service::copyAuthState(antivirus::service::queryAuthStateFromRpc(), state);
+}
+
+void AvLogin(handle_t, const wchar_t* login, const wchar_t* password, AvAuthState* state)
+{
+    antivirus::service::copyAuthState(antivirus::service::loginFromRpc(login, password), state);
+}
+
+void AvLogout(handle_t, AvAuthState* state)
+{
+    antivirus::service::copyAuthState(antivirus::service::logoutFromRpc(), state);
+}
+
+void AvGetLicenseState(handle_t, AvLicenseState* state)
+{
+    antivirus::service::copyLicenseState(antivirus::service::queryLicenseStateFromRpc(), state);
+}
+
+void AvActivateProduct(handle_t, const wchar_t* activationCode, AvLicenseState* state)
+{
+    antivirus::service::copyLicenseState(antivirus::service::activateFromRpc(activationCode), state);
+}
+
+void AvGetFeatureState(handle_t, AvFeatureState* state)
+{
+    antivirus::service::copyFeatureState(antivirus::service::queryFeatureStateFromRpc(), state);
+}
+
+void AvGetDatabaseInfo(handle_t, AvDatabaseInfo* info)
+{
+    antivirus::service::copyDatabaseInfo(antivirus::service::queryDatabaseInfoFromRpc(), info);
+}
+
+void AvScanFile(handle_t, const wchar_t* path, AvScanResult* result)
+{
+    antivirus::service::copyScanResult(antivirus::service::scanFileFromRpc(path), result);
+}
+
+void AvScanDirectory(handle_t, const wchar_t* path, AvScanResult* result)
+{
+    antivirus::service::copyScanResult(antivirus::service::scanDirectoryFromRpc(path), result);
+}
+
+void AvScanFixedDrives(handle_t, AvScanResult* result)
+{
+    antivirus::service::copyScanResult(antivirus::service::scanFixedDrivesFromRpc(), result);
+}
+
+void AvStartDirectoryMonitor(handle_t, const wchar_t* path, AvDirectoryMonitorStatus* status)
+{
+    antivirus::service::copyDirectoryMonitorInfo(antivirus::service::startDirectoryMonitorFromRpc(path), status);
+}
+
+void AvStopDirectoryMonitor(handle_t, AvDirectoryMonitorStatus* status)
+{
+    antivirus::service::copyDirectoryMonitorInfo(antivirus::service::stopDirectoryMonitorFromRpc(), status);
+}
+
+void AvGetDirectoryMonitorStatus(handle_t, AvDirectoryMonitorStatus* status)
+{
+    antivirus::service::copyDirectoryMonitorInfo(antivirus::service::queryDirectoryMonitorStatusFromRpc(), status);
+}
+
+void AvStartScanSchedule(handle_t, long targetType, const wchar_t* path, unsigned long intervalSeconds, AvScanScheduleStatus* status)
+{
+    antivirus::service::copyScanScheduleInfo(
+        antivirus::service::startScanScheduleFromRpc(targetType, path, intervalSeconds),
+        status);
+}
+
+void AvStopScanSchedule(handle_t, AvScanScheduleStatus* status)
+{
+    antivirus::service::copyScanScheduleInfo(antivirus::service::stopScanScheduleFromRpc(), status);
+}
+
+void AvGetScanScheduleStatus(handle_t, AvScanScheduleStatus* status)
+{
+    antivirus::service::copyScanScheduleInfo(antivirus::service::queryScanScheduleStatusFromRpc(), status);
+}

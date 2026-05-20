@@ -1,4 +1,5 @@
 #include "common/logging.h"
+#include "service/ServiceMain.h"
 
 #include <iostream>
 #include <string_view>
@@ -32,13 +33,24 @@ int wmain(int argc, wchar_t* argv[])
         return 0;
     }
 
-    antivirus::common::log_info(L"Starting service scaffold");
+    antivirus::common::log_info(L"Starting service");
 
-    if (has_argument(args, L"--console")) {
-        std::wcout << L"AntivirusService console scaffold is running.\n";
-        return 0;
+    if (has_argument(args, L"--install")) {
+        return antivirus::service::installService();
     }
 
-    std::wcout << L"AntivirusService scaffold. Use --console for the current placeholder mode.\n";
+    if (has_argument(args, L"--uninstall")) {
+        return antivirus::service::uninstallService();
+    }
+
+    if (has_argument(args, L"--run-service")) {
+        return antivirus::service::runService();
+    }
+
+    if (has_argument(args, L"--console")) {
+        return antivirus::service::runConsole();
+    }
+
+    std::wcout << L"Usage: AntivirusService.exe --install | --uninstall | --run-service | --console | --version\n";
     return 0;
 }

@@ -6,11 +6,12 @@ on:
       - main
       - "chore/**"
       - "task-**"
+      - "stack/**"
+      - "extra-**"
       - "feat/**"
+      - "feature/**"
       - "bugfix/**"
   pull_request:
-    branches:
-      - main
 
 jobs:
   build:

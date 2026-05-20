@@ -3,14 +3,10 @@ name: Windows
 on:
   push:
     branches:
-      - main
-      - "chore/**"
-      - "task-**"
-      - "feat/**"
-      - "bugfix/**"
+      - '**'          
   pull_request:
     branches:
-      - main
+      - '**'          
 
 jobs:
   build:

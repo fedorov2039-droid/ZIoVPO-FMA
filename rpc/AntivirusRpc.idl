@@ -27,6 +27,26 @@ interface AntivirusRpc
         wchar_t blockedReason[256];
     } AvFeatureState;
 
+    typedef struct AvDatabaseInfo {
+        long databaseLoaded;
+        wchar_t releaseDate[64];
+        unsigned long recordCount;
+        wchar_t lastError[256];
+    } AvDatabaseInfo;
+
+    typedef struct AvScanResult {
+        long scanned;
+        long malicious;
+        wchar_t scannedPath[512];
+        wchar_t threatName[128];
+        wchar_t objectType[64];
+        unsigned long detectionOffset;
+        unsigned long scannedFiles;
+        unsigned long maliciousFiles;
+        wchar_t details[2048];
+        wchar_t lastError[512];
+    } AvScanResult;
+
     void AvPing([in] handle_t binding, [out] long* result);
     void AvRequestServiceStop([in] handle_t binding, [out] long* result);
     void AvGetServiceStatus([in] handle_t binding, [out] long* status);
@@ -36,4 +56,7 @@ interface AntivirusRpc
     void AvGetLicenseState([in] handle_t binding, [out] AvLicenseState* state);
     void AvActivateProduct([in] handle_t binding, [in, string] const wchar_t* activationCode, [out] AvLicenseState* state);
     void AvGetFeatureState([in] handle_t binding, [out] AvFeatureState* state);
+    void AvGetDatabaseInfo([in] handle_t binding, [out] AvDatabaseInfo* info);
+    void AvScanFile([in] handle_t binding, [in, string] const wchar_t* path, [out] AvScanResult* result);
+    void AvScanDirectory([in] handle_t binding, [in, string] const wchar_t* path, [out] AvScanResult* result);
 }

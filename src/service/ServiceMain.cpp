@@ -7,7 +7,10 @@
 #include "service/LicenseManager.h"
 #include "service/RpcServer.h"
 #include "service/SessionManager.h"
+#include "service/scan/AvDatabase.h"
+#include "service/scan/FileScanner.h"
 
+#include <sstream>
 #include <string>
 #include <windows.h>
 #include <winsvc.h>
@@ -47,6 +50,62 @@ public:
 private:
     SC_HANDLE handle_ = nullptr;
 };
+
+std::wstring pathOrEmpty(const wchar_t* path)
+{
+    return path != nullptr ? path : L"";
+}
+
+std::wstring buildFileScanDetails(const scan::FileScanReport& report)
+{
+    std::wstringstream stream;
+
+    if (!report.result.error.empty()) {
+        stream << L"Ошибка: " << report.result.error;
+        return stream.str();
+    }
+
+    stream << L"Файл: " << report.path.wstring() << L"\n";
+    stream << L"Тип объекта: " << report.result.objectType << L"\n";
+
+    if (report.result.malicious) {
+        stream << L"Результат: обнаружена угроза\n";
+        stream << L"Угроза: " << report.result.threatName << L"\n";
+        stream << L"Смещение: " << report.result.detectionOffset;
+    } else {
+        stream << L"Результат: угроз не обнаружено";
+    }
+
+    return stream.str();
+}
+
+std::wstring buildDirectoryScanDetails(const scan::DirectoryScanReport& report)
+{
+    std::wstringstream stream;
+
+    if (!report.error.empty()) {
+        stream << L"Ошибка: " << report.error;
+        return stream.str();
+    }
+
+    stream << L"Просканировано файлов: " << report.scannedFiles << L"\n";
+    stream << L"Обнаружено угроз: " << report.maliciousFiles;
+
+    std::size_t shown = 0;
+    for (const scan::FileScanReport& detection : report.detections) {
+        if (shown >= 20) {
+            stream << L"\n... список обнаружений сокращен";
+            break;
+        }
+
+        stream << L"\n\nФайл: " << detection.path.wstring();
+        stream << L"\nУгроза: " << detection.result.threatName;
+        stream << L"\nСмещение: " << detection.result.detectionOffset;
+        ++shown;
+    }
+
+    return stream.str();
+}
 
 class ServiceRuntime final {
 public:
@@ -131,6 +190,7 @@ public:
     {
         const AuthState state = authManager_.logout();
         licenseManager_.clear();
+        database_.clear();
         return state;
     }
 
@@ -141,13 +201,103 @@ public:
 
     LicenseState activate(const wchar_t* activationCode)
     {
-        return licenseManager_.activate(authManager_.state().authenticated, activationCode != nullptr ? activationCode : L"");
+        LicenseState state = licenseManager_.activate(authManager_.state().authenticated, activationCode != nullptr ? activationCode : L"");
+        if (state.active) {
+            database_.loadDemoDatabase();
+            antivirus::common::log_info(L"Antivirus database loaded after successful activation");
+        }
+
+        return state;
     }
 
     FeatureState featureState() const
     {
         const AuthState auth = authManager_.state();
         return computeFeatureState(auth, licenseManager_.state(auth.authenticated));
+    }
+
+    DatabaseInfo databaseInfo() const
+    {
+        DatabaseInfo info;
+        info.loaded = database_.loaded();
+        info.releaseDate = database_.releaseDate();
+        info.recordCount = database_.recordCount();
+
+        if (!info.loaded) {
+            info.lastError = L"Antivirus database is not loaded";
+        }
+
+        return info;
+    }
+
+    RpcScanResult scanFile(const wchar_t* path)
+    {
+        RpcScanResult result;
+        result.scannedPath = pathOrEmpty(path);
+
+        const FeatureState feature = featureState();
+        if (!feature.enabled) {
+            result.lastError = feature.blockedReason.empty() ? L"Feature is blocked" : feature.blockedReason;
+            result.details = result.lastError;
+            return result;
+        }
+
+        if (!database_.loaded()) {
+            result.lastError = L"Antivirus database is not loaded";
+            result.details = result.lastError;
+            return result;
+        }
+
+        const scan::FileScanReport report = scanner_.scanFile(result.scannedPath, database_);
+
+        result.scanned = report.result.scanned;
+        result.malicious = report.result.malicious;
+        result.scannedPath = report.path.wstring();
+        result.threatName = report.result.threatName;
+        result.objectType = report.result.objectType;
+        result.detectionOffset = report.result.detectionOffset;
+        result.details = buildFileScanDetails(report);
+        result.lastError = report.result.error;
+
+        return result;
+    }
+
+    RpcScanResult scanDirectory(const wchar_t* path)
+    {
+        RpcScanResult result;
+        result.scannedPath = pathOrEmpty(path);
+
+        const FeatureState feature = featureState();
+        if (!feature.enabled) {
+            result.lastError = feature.blockedReason.empty() ? L"Feature is blocked" : feature.blockedReason;
+            result.details = result.lastError;
+            return result;
+        }
+
+        if (!database_.loaded()) {
+            result.lastError = L"Antivirus database is not loaded";
+            result.details = result.lastError;
+            return result;
+        }
+
+        const scan::DirectoryScanReport report = scanner_.scanDirectory(result.scannedPath, database_);
+
+        result.scanned = report.error.empty();
+        result.malicious = report.maliciousFiles > 0;
+        result.scannedFiles = report.scannedFiles;
+        result.maliciousFiles = report.maliciousFiles;
+        result.details = buildDirectoryScanDetails(report);
+        result.lastError = report.error;
+
+        if (!report.detections.empty()) {
+            const scan::FileScanReport& firstDetection = report.detections.front();
+            result.scannedPath = firstDetection.path.wstring();
+            result.threatName = firstDetection.result.threatName;
+            result.objectType = firstDetection.result.objectType;
+            result.detectionOffset = firstDetection.result.detectionOffset;
+        }
+
+        return result;
     }
 
 private:
@@ -174,6 +324,8 @@ private:
     SessionManager sessionManager_;
     AuthManager authManager_;
     LicenseManager licenseManager_;
+    scan::AvDatabase database_;
+    scan::FileScanner scanner_;
 };
 
 DWORD WINAPI serviceControlHandler(DWORD controlCode, DWORD eventType, void* eventData, void*)
@@ -267,6 +419,33 @@ FeatureState queryFeatureStateFromRpc()
     }
 
     return g_runtime->featureState();
+}
+
+DatabaseInfo queryDatabaseInfoFromRpc()
+{
+    if (g_runtime == nullptr) {
+        return DatabaseInfo{.lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->databaseInfo();
+}
+
+RpcScanResult scanFileFromRpc(const wchar_t* path)
+{
+    if (g_runtime == nullptr) {
+        return RpcScanResult{.scannedPath = pathOrEmpty(path), .lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->scanFile(path);
+}
+
+RpcScanResult scanDirectoryFromRpc(const wchar_t* path)
+{
+    if (g_runtime == nullptr) {
+        return RpcScanResult{.scannedPath = pathOrEmpty(path), .lastError = L"Service runtime unavailable"};
+    }
+
+    return g_runtime->scanDirectory(path);
 }
 
 int installService()

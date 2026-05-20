@@ -4,6 +4,8 @@
 #include "common/logging.h"
 #include "service/AuthState.h"
 
+#include <cstdint>
+#include <limits>
 #include <rpc.h>
 #include <windows.h>
 
@@ -17,6 +19,13 @@ template <std::size_t Size>
 void copyString(wchar_t (&destination)[Size], const std::wstring& source)
 {
     wcsncpy_s(destination, source.c_str(), _TRUNCATE);
+}
+
+unsigned long clampToUnsignedLong(std::uint64_t value)
+{
+    return value > static_cast<std::uint64_t>(std::numeric_limits<unsigned long>::max())
+        ? std::numeric_limits<unsigned long>::max()
+        : static_cast<unsigned long>(value);
 }
 
 void copyAuthState(const AuthState& source, AvAuthState* destination)
@@ -52,6 +61,36 @@ void copyFeatureState(const FeatureState& source, AvFeatureState* destination)
 
     destination->functionalityEnabled = source.enabled ? 1 : 0;
     copyString(destination->blockedReason, source.blockedReason);
+}
+
+void copyDatabaseInfo(const DatabaseInfo& source, AvDatabaseInfo* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->databaseLoaded = source.loaded ? 1 : 0;
+    copyString(destination->releaseDate, source.releaseDate);
+    destination->recordCount = clampToUnsignedLong(static_cast<std::uint64_t>(source.recordCount));
+    copyString(destination->lastError, source.lastError);
+}
+
+void copyScanResult(const RpcScanResult& source, AvScanResult* destination)
+{
+    if (destination == nullptr) {
+        return;
+    }
+
+    destination->scanned = source.scanned ? 1 : 0;
+    destination->malicious = source.malicious ? 1 : 0;
+    copyString(destination->scannedPath, source.scannedPath);
+    copyString(destination->threatName, source.threatName);
+    copyString(destination->objectType, source.objectType);
+    destination->detectionOffset = clampToUnsignedLong(source.detectionOffset);
+    destination->scannedFiles = clampToUnsignedLong(static_cast<std::uint64_t>(source.scannedFiles));
+    destination->maliciousFiles = clampToUnsignedLong(static_cast<std::uint64_t>(source.maliciousFiles));
+    copyString(destination->details, source.details);
+    copyString(destination->lastError, source.lastError);
 }
 
 } // namespace
@@ -153,4 +192,19 @@ void AvActivateProduct(handle_t, const wchar_t* activationCode, AvLicenseState* 
 void AvGetFeatureState(handle_t, AvFeatureState* state)
 {
     antivirus::service::copyFeatureState(antivirus::service::queryFeatureStateFromRpc(), state);
+}
+
+void AvGetDatabaseInfo(handle_t, AvDatabaseInfo* info)
+{
+    antivirus::service::copyDatabaseInfo(antivirus::service::queryDatabaseInfoFromRpc(), info);
+}
+
+void AvScanFile(handle_t, const wchar_t* path, AvScanResult* result)
+{
+    antivirus::service::copyScanResult(antivirus::service::scanFileFromRpc(path), result);
+}
+
+void AvScanDirectory(handle_t, const wchar_t* path, AvScanResult* result)
+{
+    antivirus::service::copyScanResult(antivirus::service::scanDirectoryFromRpc(path), result);
 }

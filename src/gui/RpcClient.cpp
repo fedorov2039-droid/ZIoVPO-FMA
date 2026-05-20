@@ -81,6 +81,32 @@ FeatureState convertFeatureState(const AvFeatureState& state)
     };
 }
 
+DatabaseInfo convertDatabaseInfo(const AvDatabaseInfo& info)
+{
+    return DatabaseInfo{
+        .loaded = info.databaseLoaded != 0,
+        .releaseDate = QString::fromWCharArray(info.releaseDate),
+        .recordCount = info.recordCount,
+        .lastError = QString::fromWCharArray(info.lastError),
+    };
+}
+
+ScanResult convertScanResult(const AvScanResult& result)
+{
+    return ScanResult{
+        .scanned = result.scanned != 0,
+        .malicious = result.malicious != 0,
+        .scannedPath = QString::fromWCharArray(result.scannedPath),
+        .threatName = QString::fromWCharArray(result.threatName),
+        .objectType = QString::fromWCharArray(result.objectType),
+        .detectionOffset = result.detectionOffset,
+        .scannedFiles = result.scannedFiles,
+        .maliciousFiles = result.maliciousFiles,
+        .details = QString::fromWCharArray(result.details),
+        .lastError = QString::fromWCharArray(result.lastError),
+    };
+}
+
 } // namespace
 
 bool RpcClient::ping() const
@@ -197,6 +223,42 @@ FeatureState RpcClient::featureState() const
 
     AvGetFeatureState(binding.get(), &state);
     return convertFeatureState(state);
+}
+
+DatabaseInfo RpcClient::databaseInfo() const
+{
+    RpcBinding binding;
+    AvDatabaseInfo info{};
+    if (binding.get() == nullptr) {
+        return convertDatabaseInfo(info);
+    }
+
+    AvGetDatabaseInfo(binding.get(), &info);
+    return convertDatabaseInfo(info);
+}
+
+ScanResult RpcClient::scanFile(const QString& path) const
+{
+    RpcBinding binding;
+    AvScanResult result{};
+    if (binding.get() == nullptr) {
+        return convertScanResult(result);
+    }
+
+    AvScanFile(binding.get(), reinterpret_cast<const wchar_t*>(path.utf16()), &result);
+    return convertScanResult(result);
+}
+
+ScanResult RpcClient::scanDirectory(const QString& path) const
+{
+    RpcBinding binding;
+    AvScanResult result{};
+    if (binding.get() == nullptr) {
+        return convertScanResult(result);
+    }
+
+    AvScanDirectory(binding.get(), reinterpret_cast<const wchar_t*>(path.utf16()), &result);
+    return convertScanResult(result);
 }
 
 } // namespace antivirus::gui

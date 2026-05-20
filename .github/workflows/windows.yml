@@ -3,14 +3,10 @@ name: Windows
 on:
   push:
     branches:
-      - main
-      - "chore/**"
-      - "task-**"
-      - "feat/**"
-      - "bugfix/**"
+      - '**'          # пуш на любые ветки
   pull_request:
     branches:
-      - main
+      - '**'          # PR на любые ветки
 
 jobs:
   build:

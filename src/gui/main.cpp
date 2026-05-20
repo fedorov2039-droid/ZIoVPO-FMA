@@ -78,7 +78,7 @@ int main(int argc, char* argv[])
     antivirus::gui::RpcClient rpcClient;
     lifecycle.setRpcClient(&rpcClient);
 
-    antivirus::gui::MainWindow window(lifecycle);
+    antivirus::gui::MainWindow window(lifecycle, rpcClient);
     antivirus::gui::TrayController trayController(window, lifecycle);
     lifecycle.setTrayController(&trayController);
 

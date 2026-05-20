@@ -2,19 +2,31 @@
 
 #include <QMainWindow>
 
+class QLabel;
+
 namespace antivirus::gui {
 
 class AppLifecycle;
+class RpcClient;
 
 class MainWindow final : public QMainWindow {
 public:
-    explicit MainWindow(AppLifecycle& lifecycle, QWidget* parent = nullptr);
+    MainWindow(AppLifecycle& lifecycle, RpcClient& rpcClient, QWidget* parent = nullptr);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
 
 private:
+    void updateAccountState();
+    void showLoginFlow();
+    void showActivationFlow();
+    void logout();
+
     AppLifecycle& lifecycle_;
+    RpcClient& rpcClient_;
+    QLabel* accountLabel_ = nullptr;
+    QLabel* licenseLabel_ = nullptr;
+    QLabel* featureLabel_ = nullptr;
 };
 
 } // namespace antivirus::gui

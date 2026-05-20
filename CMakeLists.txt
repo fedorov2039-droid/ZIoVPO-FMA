@@ -47,6 +47,14 @@ if(ANTIVIRUS_BUILD_GUI)
     qt_standard_project_setup()
 
     qt_add_executable(AntivirusGui WIN32
+        src/gui/AppLifecycle.cpp
+        src/gui/AppLifecycle.h
+        src/gui/MainWindow.cpp
+        src/gui/MainWindow.h
+        src/gui/SingleInstanceGuard.cpp
+        src/gui/SingleInstanceGuard.h
+        src/gui/TrayController.cpp
+        src/gui/TrayController.h
         src/gui/main.cpp
     )
 

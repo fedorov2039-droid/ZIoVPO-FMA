@@ -7,17 +7,42 @@
 
 #include <QAction>
 #include <QCloseEvent>
+#include <QFileDialog>
 #include <QFont>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QPushButton>
 #include <QStatusBar>
+#include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
 namespace antivirus::gui {
+namespace {
+
+QString formatScanResult(const ScanResult& result)
+{
+    QString text;
+
+    if (!result.lastError.isEmpty()) {
+        text += QStringLiteral("Ошибка: %1\n\n").arg(result.lastError);
+    }
+
+    if (!result.details.isEmpty()) {
+        text += result.details;
+    } else {
+        text += result.malicious
+            ? QStringLiteral("Результат: обнаружена угроза")
+            : QStringLiteral("Результат: угроз не обнаружено");
+    }
+
+    return text;
+}
+
+} // namespace
 
 MainWindow::MainWindow(AppLifecycle& lifecycle, RpcClient& rpcClient, QWidget* parent)
     : QMainWindow(parent)
@@ -25,7 +50,7 @@ MainWindow::MainWindow(AppLifecycle& lifecycle, RpcClient& rpcClient, QWidget* p
     , rpcClient_(rpcClient)
 {
     setWindowTitle(QStringLiteral("Антивирус GUI"));
-    resize(720, 480);
+    resize(820, 620);
 
     auto* fileMenu = menuBar()->addMenu(QStringLiteral("Файл"));
     auto* exitAction = fileMenu->addAction(QStringLiteral("Выход"));
@@ -61,8 +86,29 @@ MainWindow::MainWindow(AppLifecycle& lifecycle, RpcClient& rpcClient, QWidget* p
     featureLabel_ = new QLabel(QStringLiteral("Функции: заблокированы"), central);
     featureLabel_->setWordWrap(true);
 
+    databaseLabel_ = new QLabel(QStringLiteral("Антивирусные базы: не загружены"), central);
+    databaseLabel_->setWordWrap(true);
+
     auto* note = new QLabel(QStringLiteral("Закрытие окна скрывает интерфейс, приложение продолжает работать в фоне."), central);
     note->setWordWrap(true);
+
+    auto* scanButtonsLayout = new QHBoxLayout();
+    scanFileButton_ = new QPushButton(QStringLiteral("Сканировать файл"), central);
+    scanDirectoryButton_ = new QPushButton(QStringLiteral("Сканировать папку"), central);
+
+    scanButtonsLayout->addWidget(scanFileButton_);
+    scanButtonsLayout->addWidget(scanDirectoryButton_);
+
+    connect(scanFileButton_, &QPushButton::clicked, this, [this]() {
+        scanFile();
+    });
+    connect(scanDirectoryButton_, &QPushButton::clicked, this, [this]() {
+        scanDirectory();
+    });
+
+    scanResultEdit_ = new QTextEdit(central);
+    scanResultEdit_->setReadOnly(true);
+    scanResultEdit_->setPlaceholderText(QStringLiteral("Здесь будут отображаться результаты сканирования."));
 
     auto* exitButton = new QPushButton(QStringLiteral("Выход"), central);
     connect(exitButton, &QPushButton::clicked, this, [this]() {
@@ -73,8 +119,10 @@ MainWindow::MainWindow(AppLifecycle& lifecycle, RpcClient& rpcClient, QWidget* p
     layout->addWidget(accountLabel_);
     layout->addWidget(licenseLabel_);
     layout->addWidget(featureLabel_);
+    layout->addWidget(databaseLabel_);
     layout->addWidget(note);
-    layout->addStretch(1);
+    layout->addLayout(scanButtonsLayout);
+    layout->addWidget(scanResultEdit_, 1);
     layout->addWidget(exitButton);
 
     setCentralWidget(central);
@@ -124,6 +172,11 @@ void MainWindow::updateAccountState()
                                ? QStringLiteral("Функции: доступны")
                                : QStringLiteral("Функции: заблокированы (%1)").arg(feature.blockedReason));
 
+    scanFileButton_->setEnabled(feature.functionalityEnabled);
+    scanDirectoryButton_->setEnabled(feature.functionalityEnabled);
+
+    updateDatabaseState();
+
     if (!auth.authenticated) {
         showLoginFlow();
         return;
@@ -131,6 +184,21 @@ void MainWindow::updateAccountState()
 
     if (!license.licenseActive && license.activationRequired) {
         showActivationFlow();
+    }
+}
+
+void MainWindow::updateDatabaseState()
+{
+    const auto database = rpcClient_.databaseInfo();
+
+    if (database.loaded) {
+        databaseLabel_->setText(QStringLiteral("Антивирусные базы: загружены, дата выпуска: %1, записей: %2")
+                                    .arg(database.releaseDate)
+                                    .arg(database.recordCount));
+    } else if (!database.lastError.isEmpty()) {
+        databaseLabel_->setText(QStringLiteral("Антивирусные базы: %1").arg(database.lastError));
+    } else {
+        databaseLabel_->setText(QStringLiteral("Антивирусные базы: не загружены"));
     }
 }
 
@@ -154,6 +222,32 @@ void MainWindow::logout()
 {
     rpcClient_.logout();
     updateAccountState();
+}
+
+void MainWindow::scanFile()
+{
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Выберите файл для сканирования"));
+    if (path.isEmpty()) {
+        return;
+    }
+
+    scanResultEdit_->setPlainText(QStringLiteral("Сканирование файла...\n%1").arg(path));
+    const ScanResult result = rpcClient_.scanFile(path);
+    scanResultEdit_->setPlainText(formatScanResult(result));
+    updateDatabaseState();
+}
+
+void MainWindow::scanDirectory()
+{
+    const QString path = QFileDialog::getExistingDirectory(this, QStringLiteral("Выберите папку для сканирования"));
+    if (path.isEmpty()) {
+        return;
+    }
+
+    scanResultEdit_->setPlainText(QStringLiteral("Сканирование папки...\n%1").arg(path));
+    const ScanResult result = rpcClient_.scanDirectory(path);
+    scanResultEdit_->setPlainText(formatScanResult(result));
+    updateDatabaseState();
 }
 
 } // namespace antivirus::gui

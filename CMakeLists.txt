@@ -114,7 +114,7 @@ target_compile_definitions(AntivirusCommon
 )
 
 if(MSVC)
-    target_compile_options(AntivirusCommon PRIVATE /W4 /permissive-)
+    target_compile_options(AntivirusCommon PRIVATE /W4 /permissive- /utf-8)
 else()
     target_compile_options(AntivirusCommon PRIVATE -Wall -Wextra -Wpedantic)
 endif()
@@ -156,6 +156,12 @@ if(ANTIVIRUS_BUILD_GUI)
 
     target_compile_definitions(AntivirusGui PRIVATE ANTIVIRUS_APP_VERSION="${PROJECT_VERSION}")
 
+    if(MSVC)
+        target_compile_options(AntivirusGui PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(AntivirusGui PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
     install(TARGETS AntivirusGui RUNTIME DESTINATION bin)
 endif()
 
@@ -177,6 +183,12 @@ if(ANTIVIRUS_BUILD_SERVICE)
         src/service/ServiceMain.h
         src/service/SessionManager.cpp
         src/service/SessionManager.h
+        src/service/scan/AvDatabase.cpp
+        src/service/scan/AvDatabase.h
+        src/service/scan/FileScanner.cpp
+        src/service/scan/FileScanner.h
+        src/service/scan/ScanEngine.cpp
+        src/service/scan/ScanEngine.h
         src/service/main.cpp
     )
 

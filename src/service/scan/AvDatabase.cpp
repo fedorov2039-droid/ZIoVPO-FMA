@@ -1,7 +1,6 @@
 #include "service/scan/AvDatabase.h"
 
-#include <algorithm>
-#include <cstring>
+#include <utility>
 
 namespace antivirus::service::scan {
 namespace {
@@ -29,6 +28,17 @@ void appendUint32(std::vector<std::uint8_t>& bytes, std::uint32_t value)
     }
 }
 
+void appendWideString(std::vector<std::uint8_t>& bytes, const std::wstring& value)
+{
+    appendUint32(bytes, static_cast<std::uint32_t>(value.size()));
+
+    for (const wchar_t ch : value) {
+        const auto codeUnit = static_cast<std::uint16_t>(ch);
+        bytes.push_back(static_cast<std::uint8_t>(codeUnit & 0xff));
+        bytes.push_back(static_cast<std::uint8_t>((codeUnit >> 8) & 0xff));
+    }
+}
+
 std::vector<std::uint8_t> asciiBytes(const char* text)
 {
     std::vector<std::uint8_t> result;
@@ -37,21 +47,6 @@ std::vector<std::uint8_t> asciiBytes(const char* text)
         ++text;
     }
     return result;
-}
-
-std::array<std::uint8_t, 32> signRecordFields(const AvRecord& record)
-{
-    std::vector<std::uint8_t> bytes;
-    appendUint64(bytes, record.objectSignaturePrefix);
-    appendUint32(bytes, record.objectSignatureLength);
-
-    bytes.insert(bytes.end(), record.objectSignature.begin(), record.objectSignature.end());
-
-    appendUint64(bytes, record.offsetBegin);
-    appendUint64(bytes, record.offsetEnd);
-    appendUint32(bytes, static_cast<std::uint32_t>(record.objectType));
-
-    return demoHash32(bytes);
 }
 
 AvRecord makeRecord(const char* signatureText,
@@ -71,7 +66,7 @@ AvRecord makeRecord(const char* signatureText,
     record.offsetEnd = offsetEnd;
     record.objectType = objectType;
     record.threatName = std::move(threatName);
-    record.avRecordSignature = signRecordFields(record);
+    record.avRecordSignature = signAvRecord(record);
 
     return record;
 }
@@ -110,6 +105,54 @@ std::array<std::uint8_t, 32> demoHash32(const std::vector<std::uint8_t>& bytes)
     return result;
 }
 
+std::array<std::uint8_t, 32> signAvRecord(const AvRecord& record)
+{
+    std::vector<std::uint8_t> bytes;
+
+    appendUint64(bytes, record.objectSignaturePrefix);
+    appendUint32(bytes, record.objectSignatureLength);
+
+    bytes.insert(bytes.end(), record.objectSignature.begin(), record.objectSignature.end());
+
+    appendUint64(bytes, record.offsetBegin);
+    appendUint64(bytes, record.offsetEnd);
+    appendUint32(bytes, static_cast<std::uint32_t>(record.objectType));
+    appendWideString(bytes, record.threatName);
+
+    return demoHash32(bytes);
+}
+
+std::array<std::uint8_t, 32> signManifest(const std::wstring& releaseDate, std::size_t declaredRecordCount)
+{
+    std::vector<std::uint8_t> bytes;
+    appendWideString(bytes, releaseDate);
+    appendUint64(bytes, static_cast<std::uint64_t>(declaredRecordCount));
+    return demoHash32(bytes);
+}
+
+std::vector<AvRecord> makeDemoRecords()
+{
+    std::vector<AvRecord> records;
+
+    records.push_back(makeRecord(
+        "MZAVGUI-PE-TEST",
+        0,
+        512,
+        ObjectType::PeFile,
+        L"Demo.Test.PE.Signature"
+    ));
+
+    records.push_back(makeRecord(
+        "Invoke-AvGuiTest",
+        0,
+        4096,
+        ObjectType::PowerShellScript,
+        L"Demo.Test.PowerShell.Signature"
+    ));
+
+    return records;
+}
+
 std::wstring objectTypeToString(ObjectType type)
 {
     switch (type) {
@@ -124,28 +167,18 @@ std::wstring objectTypeToString(ObjectType type)
 
 void AvDatabase::loadDemoDatabase()
 {
+    loadRecords(L"2026-05-08 default", makeDemoRecords());
+}
+
+void AvDatabase::loadRecords(std::wstring releaseDate, const std::vector<AvRecord>& records)
+{
     recordsByPrefix_.clear();
 
-    const AvRecord peRecord = makeRecord(
-        "MZAVGUI-PE-TEST",
-        0,
-        512,
-        ObjectType::PeFile,
-        L"Demo.Test.PE.Signature"
-    );
+    for (const AvRecord& record : records) {
+        recordsByPrefix_[record.objectSignaturePrefix].push_back(record);
+    }
 
-    const AvRecord powerShellRecord = makeRecord(
-        "Invoke-AvGuiTest",
-        0,
-        4096,
-        ObjectType::PowerShellScript,
-        L"Demo.Test.PowerShell.Signature"
-    );
-
-    recordsByPrefix_[peRecord.objectSignaturePrefix].push_back(peRecord);
-    recordsByPrefix_[powerShellRecord.objectSignaturePrefix].push_back(powerShellRecord);
-
-    releaseDate_ = L"2026-05-08";
+    releaseDate_ = std::move(releaseDate);
     loaded_ = true;
 }
 
@@ -174,6 +207,18 @@ std::size_t AvDatabase::recordCount() const
         total += records.size();
     }
     return total;
+}
+
+std::vector<AvRecord> AvDatabase::allRecords() const
+{
+    std::vector<AvRecord> records;
+
+    for (const auto& [prefix, recordsForPrefix] : recordsByPrefix_) {
+        (void)prefix;
+        records.insert(records.end(), recordsForPrefix.begin(), recordsForPrefix.end());
+    }
+
+    return records;
 }
 
 const std::map<std::uint64_t, std::vector<AvRecord>>& AvDatabase::recordsByPrefix() const

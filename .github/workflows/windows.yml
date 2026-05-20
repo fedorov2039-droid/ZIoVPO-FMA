@@ -3,10 +3,16 @@ name: Windows
 on:
   push:
     branches:
-      - '**'          
+      - main
+      - "chore/**"
+      - "task-**"
+      - "stack/**"
+      - "extra-**"
+      - "feat/**"
+      - "feature/**"
+      - "bugfix/**"
   pull_request:
-    branches:
-      - '**'          
+
 jobs:
   build:
     name: Build Windows Release

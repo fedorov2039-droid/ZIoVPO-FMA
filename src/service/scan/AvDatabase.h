@@ -28,12 +28,14 @@ struct AvRecord {
 class AvDatabase final {
 public:
     void loadDemoDatabase();
+    void loadRecords(std::wstring releaseDate, const std::vector<AvRecord>& records);
     void clear();
 
     [[nodiscard]] bool loaded() const;
     [[nodiscard]] std::wstring releaseDate() const;
     [[nodiscard]] std::size_t recordCount() const;
 
+    [[nodiscard]] std::vector<AvRecord> allRecords() const;
     [[nodiscard]] const std::map<std::uint64_t, std::vector<AvRecord>>& recordsByPrefix() const;
 
 private:
@@ -44,6 +46,9 @@ private:
 
 std::uint64_t prefixFromBytes(const std::array<std::uint8_t, 8>& bytes);
 std::array<std::uint8_t, 32> demoHash32(const std::vector<std::uint8_t>& bytes);
+std::array<std::uint8_t, 32> signAvRecord(const AvRecord& record);
+std::array<std::uint8_t, 32> signManifest(const std::wstring& releaseDate, std::size_t declaredRecordCount);
+std::vector<AvRecord> makeDemoRecords();
 std::wstring objectTypeToString(ObjectType type);
 
 } // namespace antivirus::service::scan

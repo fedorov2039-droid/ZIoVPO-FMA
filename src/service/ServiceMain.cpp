@@ -7,9 +7,11 @@
 #include "service/LicenseManager.h"
 #include "service/RpcServer.h"
 #include "service/SessionManager.h"
-#include "service/scan/AvDatabase.h"
+#include "service/scan/AvDatabaseStorage.h"
+#include "service/scan/AvUpdateScheduler.h"
 #include "service/scan/FileScanner.h"
 
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <windows.h>
@@ -121,7 +123,11 @@ public:
 
         setStatus(SERVICE_START_PENDING);
 
+        loadDatabaseFromDisk();
+        startDatabaseUpdateScheduler();
+
         if (!rpcServer_.start()) {
+            updateScheduler_.stop();
             setStatus(SERVICE_STOPPED);
             CloseHandle(stopEvent_);
             stopEvent_ = nullptr;
@@ -134,6 +140,7 @@ public:
         WaitForSingleObject(stopEvent_, INFINITE);
 
         setStatus(SERVICE_STOP_PENDING);
+        updateScheduler_.stop();
         sessionManager_.stopAllGuiChildren();
         rpcServer_.stop();
         setStatus(SERVICE_STOPPED);
@@ -190,7 +197,12 @@ public:
     {
         const AuthState state = authManager_.logout();
         licenseManager_.clear();
-        database_.clear();
+
+        {
+            std::lock_guard lock(databaseMutex_);
+            database_.clear();
+        }
+
         return state;
     }
 
@@ -203,7 +215,7 @@ public:
     {
         LicenseState state = licenseManager_.activate(authManager_.state().authenticated, activationCode != nullptr ? activationCode : L"");
         if (state.active) {
-            database_.loadDemoDatabase();
+            loadDatabaseFromDisk();
             antivirus::common::log_info(L"Antivirus database loaded after successful activation");
         }
 
@@ -218,6 +230,8 @@ public:
 
     DatabaseInfo databaseInfo() const
     {
+        std::lock_guard lock(databaseMutex_);
+
         DatabaseInfo info;
         info.loaded = database_.loaded();
         info.releaseDate = database_.releaseDate();
@@ -241,6 +255,8 @@ public:
             result.details = result.lastError;
             return result;
         }
+
+        std::lock_guard lock(databaseMutex_);
 
         if (!database_.loaded()) {
             result.lastError = L"Antivirus database is not loaded";
@@ -273,6 +289,8 @@ public:
             result.details = result.lastError;
             return result;
         }
+
+        std::lock_guard lock(databaseMutex_);
 
         if (!database_.loaded()) {
             result.lastError = L"Antivirus database is not loaded";
@@ -316,15 +334,62 @@ private:
         }
     }
 
+    void loadDatabaseFromDisk()
+    {
+        const scan::AvDatabaseLoadResult loadResult = databaseStorage_.loadOrRecover();
+        applyDatabaseLoadResult(loadResult);
+
+        if (loadResult.loaded) {
+            antivirus::common::log_info(L"Antivirus database loaded from disk");
+            antivirus::common::log_info(loadResult.message);
+        } else {
+            antivirus::common::log_error(L"Failed to load antivirus database from disk");
+            antivirus::common::log_error(loadResult.message);
+        }
+    }
+
+    void applyDatabaseLoadResult(const scan::AvDatabaseLoadResult& loadResult)
+    {
+        std::lock_guard lock(databaseMutex_);
+
+        if (loadResult.loaded) {
+            database_.loadRecords(loadResult.releaseDate, loadResult.records);
+            return;
+        }
+
+        database_.loadDemoDatabase();
+    }
+
+    void startDatabaseUpdateScheduler()
+    {
+        updateScheduler_.start([this](const scan::AvUpdateResult& result) {
+            if (result.loadResult.loaded) {
+                applyDatabaseLoadResult(result.loadResult);
+                antivirus::common::log_info(result.message);
+                antivirus::common::log_info(result.loadResult.message);
+            } else {
+                antivirus::common::log_error(result.message);
+                antivirus::common::log_error(result.loadResult.message);
+            }
+        });
+
+        antivirus::common::log_info(L"Antivirus database update scheduler started");
+    }
+
     bool serviceMode_ = false;
     SERVICE_STATUS_HANDLE statusHandle_ = nullptr;
     SERVICE_STATUS status_{};
     HANDLE stopEvent_ = nullptr;
+
     RpcServer rpcServer_;
     SessionManager sessionManager_;
     AuthManager authManager_;
     LicenseManager licenseManager_;
+
+    mutable std::mutex databaseMutex_;
     scan::AvDatabase database_;
+    scan::AvDatabaseStorage databaseStorage_;
+    scan::AvUpdateScheduler updateScheduler_;
     scan::FileScanner scanner_;
 };
 
